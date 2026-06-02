@@ -3,7 +3,8 @@ import type { EpisodeItem, StreamOption } from "../api/types.js";
 import { searchAndGetStreams } from "./hianimeScraper.js";
 
 const URL_REGEX = /^https?:\/\//i;
-const PROVIDERS = new Set(["Default", "Yt-mp4", "S-mp4", "Mp4", "Ak", "Ok", "Sw", "Luf-Mp4", "Fm-Hls", "Vg", "Bg", "Rf", "Ss-Hls", "Sl-mp4", "Uv-mp4"]);
+const PROVIDERS = new Set(["Default", "Yt-mp4", "S-mp4"]);
+const HLS_PROVIDERS = new Set(["Yt-mp4"]);
 
 export async function fetchEpisodes(client: AllanimeClient, titleId: string): Promise<EpisodeItem[]> {
   const payload = await client.showEpisodes(titleId);
@@ -204,95 +205,99 @@ function dedupeEpisodes(episodes: EpisodeItem[]): EpisodeItem[] {
 
 async function extractStreamOptionsFromEpisodeSources(client: AllanimeClient, payload: unknown): Promise<StreamOption[]> {
   const providers = extractProviders(payload);
+
+  const tasks = providers
+    .map(provider => {
+      const sourceUrl = typeof provider.sourceUrl === "string" ? provider.sourceUrl : undefined;
+      const sourceName = typeof provider.sourceName === "string" ? provider.sourceName : undefined;
+      if (!sourceUrl || !sourceName || !PROVIDERS.has(sourceName)) {
+        return undefined;
+      }
+      return { sourceUrl, sourceName, task: extractStreamsFromProvider(client, sourceUrl, sourceName) };
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+
+  const results = await Promise.all(tasks.map(t => t.task));
+
   const seen = new Map<string, StreamOption>();
-
-  for (const provider of providers) {
-    const sourceUrl = typeof provider.sourceUrl === "string" ? provider.sourceUrl : undefined;
-    const sourceName = typeof provider.sourceName === "string" ? provider.sourceName : undefined;
-    if (!sourceUrl || !sourceName || !PROVIDERS.has(sourceName)) {
-      continue;
-    }
-
-    if (sourceUrl.startsWith("--")) {
-      const hex = sourceUrl.slice(2);
-      const decryptedPath = decryptProviderPath(hex);
-
-      if (decryptedPath.includes("tools.fast4speed.rsvp")) {
-        upsertStream(seen, {
-          url: decryptedPath.replace("clock", "clock.json"),
-          qualityLabel: inferQualityFromUrl(decryptedPath) ?? sourceName,
-          referer: "https://allanime.day",
-          sourceName,
-        });
-        continue;
-      }
-
-      if (decryptedPath.includes("mp4upload")) {
-        const videoUrl = await fetchMp4uploadVideoUrl(decryptedPath);
-        if (videoUrl) {
-          upsertStream(seen, {
-            url: videoUrl,
-            qualityLabel: sourceName,
-            referer: "https://allanime.day",
-            sourceName,
-          });
-        }
-        continue;
-      }
-
-      await handleProviderJsonPayload(client, seen, decryptedPath, sourceName);
-    } else if (sourceUrl.startsWith("//")) {
-      const fullUrl = `https:${sourceUrl}`;
-      if (mightBeVideoStream(fullUrl)) {
-        upsertStream(seen, {
-          url: fullUrl,
-          qualityLabel: inferQualityFromUrl(fullUrl) ?? sourceName,
-          referer: "https://allanime.day",
-          sourceName,
-        });
-      }
-    } else if (URL_REGEX.test(sourceUrl)) {
-      if (sourceUrl.includes("mp4upload")) {
-        const videoUrl = await fetchMp4uploadVideoUrl(sourceUrl);
-        if (videoUrl) {
-          upsertStream(seen, {
-            url: videoUrl,
-            qualityLabel: sourceName,
-            referer: "https://allanime.day",
-            sourceName,
-          });
-        }
-        continue;
-      }
-
-      if (mightBeVideoStream(sourceUrl)) {
-        upsertStream(seen, {
-          url: sourceUrl,
-          qualityLabel: inferQualityFromUrl(sourceUrl) ?? sourceName,
-          referer: "https://allanime.day",
-          sourceName,
-        });
-      }
+  for (let i = 0; i < tasks.length; i++) {
+    const sourceName = tasks[i].sourceName;
+    const streams = results[i];
+    for (const stream of streams) {
+      upsertStream(seen, { ...stream, sourceName });
     }
   }
 
-  return [...seen.values()].sort((left, right) => qualityRank(right.qualityLabel) - qualityRank(left.qualityLabel));
+  return [...seen.values()]
+    .sort((left, right) => {
+      const qualityDiff = qualityRank(right.qualityLabel) - qualityRank(left.qualityLabel);
+      if (qualityDiff !== 0) return qualityDiff;
+      const leftPref = HLS_PROVIDERS.has(left.sourceName ?? "") ? 1 : 0;
+      const rightPref = HLS_PROVIDERS.has(right.sourceName ?? "") ? 1 : 0;
+      return rightPref - leftPref;
+    });
+}
+
+async function extractStreamsFromProvider(
+  client: AllanimeClient,
+  sourceUrl: string,
+  sourceName: string,
+): Promise<Array<{ url: string; qualityLabel: string; referer: string; sourceName?: string }>> {
+  const results: Array<{ url: string; qualityLabel: string; referer: string; sourceName?: string }> = [];
+
+  if (sourceUrl.startsWith("--")) {
+    const hex = sourceUrl.slice(2);
+    const decryptedPath = decryptProviderPath(hex);
+
+    if (decryptedPath.includes("tools.fast4speed.rsvp")) {
+      results.push({
+        url: decryptedPath.replace("clock", "clock.json"),
+        qualityLabel: inferQualityFromUrl(decryptedPath) ?? sourceName,
+        referer: "https://allanime.day",
+      });
+      return results;
+    }
+
+    return handleProviderJsonPayload(client, decryptedPath);
+  }
+
+  if (sourceUrl.startsWith("//")) {
+    const fullUrl = `https:${sourceUrl}`;
+    if (mightBeVideoStream(fullUrl)) {
+      results.push({
+        url: fullUrl,
+        qualityLabel: inferQualityFromUrl(fullUrl) ?? sourceName,
+        referer: "https://allanime.day",
+      });
+    }
+    return results;
+  }
+
+  if (URL_REGEX.test(sourceUrl) && mightBeVideoStream(sourceUrl)) {
+    results.push({
+      url: sourceUrl,
+      qualityLabel: inferQualityFromUrl(sourceUrl) ?? sourceName,
+      referer: "https://allanime.day",
+    });
+  }
+
+  return results;
 }
 
 async function handleProviderJsonPayload(
   client: AllanimeClient,
-  store: Map<string, StreamOption>,
   decryptedPath: string,
-  sourceName: string,
-): Promise<void> {
+): Promise<Array<{ url: string; qualityLabel: string; referer: string }>> {
   const jsonPath = decryptedPath.replace("/clock?", "/clock.json?");
   let links: Array<{ link?: string; src?: string; headers?: Record<string, string> }> = [];
   try {
     const payloadObject = await client.fetchProviderPayload(jsonPath);
     links = extractLinks(payloadObject);
   } catch {
-    return;
+    return [];
   }
+
+  const results: Array<{ url: string; qualityLabel: string; referer: string }> = [];
 
   for (const link of links) {
     const linkUrl = link.link || link.src;
@@ -304,46 +309,25 @@ async function handleProviderJsonPayload(
 
     if (/repackager\.wixmp\.com/i.test(linkUrl)) {
       for (const variant of expandWixUrls(linkUrl)) {
-        upsertStream(store, {
+        results.push({
           url: variant,
-          qualityLabel: inferQualityFromUrl(variant) ?? sourceName,
+          qualityLabel: inferQualityFromUrl(variant) ?? "Default",
           referer,
-          sourceName,
         });
       }
       continue;
     }
 
     if (URL_REGEX.test(linkUrl) && mightBeVideoStream(linkUrl)) {
-      upsertStream(store, {
+      results.push({
         url: linkUrl,
-        qualityLabel: inferQualityFromUrl(linkUrl) ?? sourceName,
+        qualityLabel: inferQualityFromUrl(linkUrl) ?? "Unknown",
         referer,
-        sourceName,
       });
     }
   }
-}
 
-async function fetchMp4uploadVideoUrl(embedUrl: string): Promise<string | undefined> {
-  try {
-    const response = await fetch(embedUrl, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:150.0) Gecko/20100101 Firefox/150.0",
-        Referer: "https://allanime.day",
-      },
-    });
-    if (!response.ok) {
-      return undefined;
-    }
-
-    const html = await response.text();
-    const match = html.match(/src:\s*"([^"]+)"/);
-    return match ? match[1] : undefined;
-  } catch {
-    return undefined;
-  }
+  return results;
 }
 
 function extractProviders(payload: unknown): Array<Record<string, unknown>> {
@@ -474,7 +458,10 @@ function inferQualityFromUrl(url: string): string | undefined {
 }
 
 function mightBeVideoStream(url: string): boolean {
-  return /(m3u8|mp4|webm|manifest|playlist|dash|tools\.fast4speed\.rsvp|ok\.ru|streamwish|listeamed|streamsb|streamlare|bysekoze)/i.test(url);
+  return /\.(m3u8|mp4|webm)(\?|$)/i.test(url)
+    || /manifest|playlist|dash/i.test(url)
+    || /tools\.fast4speed\.rsvp/i.test(url)
+    || /video\.wixstatic\.com/i.test(url);
 }
 
 function qualityRank(quality: string): number {
@@ -494,26 +481,13 @@ const PROVIDER_REFERERS: Record<string, string> = {
   "Default": "https://allanime.day",
   "Yt-mp4": "https://allanime.day",
   "S-mp4": "https://allanime.day",
-  "Mp4": "https://allanime.day",
-  "Ok": "https://allanime.day",
-  "Sw": "https://allanime.day",
-  "Vg": "https://allanime.day",
-  "Fm-Hls": "https://allanime.day",
-  "Ss-Hls": "https://allanime.day",
-  "Sl-mp4": "https://allanime.day",
-  "Ak": "https://allanime.day",
-  "Luf-Mp4": "https://allanime.day",
-  "Uv-mp4": "https://allanime.day",
-  "Bg": "https://allanime.day",
-  "Rf": "https://allanime.day",
 };
 
 export function isDirectVideoUrl(url: string): boolean {
-  return /\.(m3u8|mp4|webm|mkv)(\?|$)/i.test(url)
-    || /tools\.fast4speed\.rsvp/i.test(url)
-    || /video\.wixstatic\.com/i.test(url);
+  return mightBeVideoStream(url);
 }
 
 export function getProviderReferer(sourceName: string, fallback?: string): string {
   return PROVIDER_REFERERS[sourceName] ?? fallback ?? "https://allanime.day";
 }
+
