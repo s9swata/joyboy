@@ -489,3 +489,31 @@ function qualityRank(quality: string): number {
 
   return 0;
 }
+
+const PROVIDER_REFERERS: Record<string, string> = {
+  "Default": "https://allanime.day",
+  "Yt-mp4": "https://allanime.day",
+  "S-mp4": "https://allanime.day",
+  "Mp4": "https://allanime.day",
+  "Ok": "https://allanime.day",
+  "Sw": "https://allanime.day",
+  "Vg": "https://allanime.day",
+  "Fm-Hls": "https://allanime.day",
+  "Ss-Hls": "https://allanime.day",
+  "Sl-mp4": "https://allanime.day",
+  "Ak": "https://allanime.day",
+  "Luf-Mp4": "https://allanime.day",
+  "Uv-mp4": "https://allanime.day",
+  "Bg": "https://allanime.day",
+  "Rf": "https://allanime.day",
+};
+
+export function isDirectVideoUrl(url: string): boolean {
+  return /\.(m3u8|mp4|webm|mkv)(\?|$)/i.test(url)
+    || /tools\.fast4speed\.rsvp/i.test(url)
+    || /video\.wixstatic\.com/i.test(url);
+}
+
+export function getProviderReferer(sourceName: string, fallback?: string): string {
+  return PROVIDER_REFERERS[sourceName] ?? fallback ?? "https://allanime.day";
+}

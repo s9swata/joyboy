@@ -6,13 +6,14 @@ import Image from "ink-picture";
 import { AllanimeClient } from "../api/allanimeClient.js";
 import type { EpisodeItem, SearchItem, StreamOption } from "../api/types.js";
 import { launchPlayer } from "../player/launchPlayer.js";
-import { fetchEpisodes, fetchStreamOptions } from "../services/animeService.js";
+import { extractStreamUrl } from "../player/ytdlp.js";
+import { fetchEpisodes, fetchStreamOptions, isDirectVideoUrl, getProviderReferer } from "../services/animeService.js";
 import { fetchAniListMetadata, fetchAniListMetadataByTitle, AnimeMetadata } from "../services/anilistService.js";
 import { searchTitles } from "../services/searchService.js";
 import { fallbackCoverUrl } from "../services/assets.js";
 import { getLastWatched, setLastWatched, WatchHistoryEntry } from "../services/watchHistory.js";
 
-type Screen = "search" | "results" | "episodes" | "playing" | "post-play";
+type Screen = "search" | "results" | "episodes" | "stream-picker" | "playing" | "post-play";
 const PAGE_SIZE = 12;
 
 const client = new AllanimeClient();
@@ -35,9 +36,10 @@ export function App(): React.ReactElement {
   const [items, setItems] = useState<SearchItem[]>([]);
   const [episodes, setEpisodes] = useState<EpisodeItem[]>([]);
   const [streams, setStreams] = useState<StreamOption[]>([]);
-  
+
   const [selectedSearchIndex, setSelectedSearchIndex] = useState(0);
   const [selectedEpisodeIndex, setSelectedEpisodeIndex] = useState(0);
+  const [selectedStreamIndex, setSelectedStreamIndex] = useState(0);
   const [selectedPostPlayIndex, setSelectedPostPlayIndex] = useState(0);
   const [episodeSearch, setEpisodeSearch] = useState("");
   const [episodeSearchActive, setEpisodeSearchActive] = useState(false);
@@ -133,11 +135,31 @@ export function App(): React.ReactElement {
         return;
       }
       if (key.return && selectedEpisode) {
-        void playSelectedEpisode();
+        void fetchAndShowStreams();
         return;
       }
       if (key.escape) {
         setScreen("results");
+      }
+      return;
+    }
+
+    if (screen === "stream-picker") {
+      if (key.upArrow) {
+        setSelectedStreamIndex((previous: number) => Math.max(previous - 1, 0));
+        return;
+      }
+      if (key.downArrow) {
+        setSelectedStreamIndex((previous: number) => Math.min(previous + 1, Math.max(streams.length - 1, 0)));
+        return;
+      }
+      if (key.return) {
+        void playSelectedStream();
+        return;
+      }
+      if (key.escape) {
+        setSelectedEpisodeIndex(playingRealIndex);
+        setScreen("episodes");
       }
       return;
     }
@@ -184,6 +206,12 @@ export function App(): React.ReactElement {
       setSelectedEpisodeIndex(0);
     }
   }, [screen, selectedEpisodeIndex, displayedEpisodes.length]);
+
+  useEffect(() => {
+    if (screen === "stream-picker" && selectedStreamIndex >= streams.length && streams.length > 0) {
+      setSelectedStreamIndex(0);
+    }
+  }, [screen, selectedStreamIndex, streams.length]);
 
   useEffect(() => {
     if (screen === "post-play" && selectedPostPlayIndex >= postPlayOptions.length && postPlayOptions.length > 0) {
@@ -252,7 +280,7 @@ export function App(): React.ReactElement {
       setEpisodeSearch("");
       setEpisodeSearchActive(false);
       setStreams([]);
-      
+
       const watched = await getLastWatched(selectedTitle.id);
       setLastWatchedEntry(watched ?? null);
       if (watched) {
@@ -261,7 +289,7 @@ export function App(): React.ReactElement {
           setSelectedEpisodeIndex(idx);
         }
       }
-      
+
       setScreen("episodes");
     } catch (episodeError) {
       const message = episodeError instanceof Error ? episodeError.message : "Unknown episode loading error";
@@ -272,9 +300,74 @@ export function App(): React.ReactElement {
     }
   }
 
-  async function playSelectedEpisode(): Promise<void> {
+  async function fetchAndShowStreams(): Promise<void> {
     if (!selectedTitle || !selectedEpisode) return;
-    await doPlay(selectedEpisode);
+    setLoading(true);
+    setLoadingLabel("Fetching available streams...");
+    setError(null);
+    setStreams([]);
+
+    try {
+      const nextStreams = await fetchStreamOptions(client, selectedTitle.id, selectedEpisode.id, selectedTitle.title);
+      if (nextStreams.length === 0) {
+        throw new Error("No stream URLs found for this episode.");
+      }
+
+      setStreams(nextStreams);
+      setSelectedStreamIndex(0);
+      setScreen("stream-picker");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      setError(message);
+    } finally {
+      setLoading(false);
+      setLoadingLabel(null);
+    }
+  }
+
+  async function playSelectedStream(): Promise<void> {
+    const stream = streams[selectedStreamIndex];
+    if (!stream || !selectedTitle || !selectedEpisode) return;
+
+    setLoading(true);
+    setLoadingLabel(`Preparing ${stream.sourceName} stream...`);
+    setError(null);
+    setScreen("playing");
+
+    try {
+      let playUrl = stream.url;
+      let referer = stream.referer ?? getProviderReferer(stream.sourceName ?? "");
+
+      if (!isDirectVideoUrl(playUrl)) {
+        setLoadingLabel(`Resolving embed URL via yt-dlp...`);
+        const resolved = await extractStreamUrl(playUrl, { referer: referer ?? undefined });
+        if (resolved) {
+          playUrl = resolved.url;
+        }
+      }
+
+      const playerTitle = `${selectedTitle.title} - ${selectedEpisode.label}`;
+      await launchPlayer(playUrl, { executable: "iina", referer, title: playerTitle });
+
+      await setLastWatched(selectedTitle.id, selectedTitle.title, selectedEpisode.id, selectedEpisode.label);
+      setLastWatchedEntry({
+        animeId: selectedTitle.id,
+        title: selectedTitle.title,
+        episodeId: selectedEpisode.id,
+        episodeLabel: selectedEpisode.label,
+        watchedAt: Date.now(),
+      });
+
+      setSelectedPostPlayIndex(0);
+      setScreen("post-play");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown player error";
+      setError(message);
+      setScreen("stream-picker");
+    } finally {
+      setLoading(false);
+      setLoadingLabel(null);
+    }
   }
 
   async function autoPlayNextEpisode(newRealIndex: number): Promise<void> {
@@ -283,59 +376,9 @@ export function App(): React.ReactElement {
     if (!ep) return;
     setEpisodeSearch("");
     setEpisodeSearchActive(false);
-    await doPlay(ep, newRealIndex);
-  }
-
-  async function doPlay(episodeToPlay: EpisodeItem, realIndex?: number): Promise<void> {
-    const resolvedRealIndex = realIndex ?? episodes.indexOf(episodeToPlay);
-    setPlayingRealIndex(resolvedRealIndex);
-    setSelectedEpisodeIndex(resolvedRealIndex);
-    setLoading(true);
-    setLoadingLabel("Finding best stream...");
-    setError(null);
-    setStatus(null);
-    setScreen("playing");
-
-    try {
-      const nextStreams = await fetchStreamOptions(client, selectedTitle!.id, episodeToPlay.id, selectedTitle!.title);
-      if (nextStreams.length === 0) {
-        throw new Error("No stream URLs found for this episode.");
-      }
-
-      setStreams(nextStreams);
-      const bestStream = nextStreams[0]; // Assuming pre-sorted highest quality
-
-      if (!bestStream) {
-        throw new Error("Best stream is missing.");
-      }
-
-      setLoadingLabel(`Launching iina for ${bestStream.qualityLabel}...`);
-
-      const playerTitle = `${selectedTitle?.title ?? "Unknown"} - ${selectedEpisode?.label ?? ""}`;
-      await launchPlayer(bestStream.url, { executable: "iina", referer: bestStream.referer, title: playerTitle });
-
-      await setLastWatched(selectedTitle!.id, selectedTitle!.title, episodeToPlay.id, episodeToPlay.label);
-      setLastWatchedEntry({
-        animeId: selectedTitle!.id,
-        title: selectedTitle!.title,
-        episodeId: episodeToPlay.id,
-        episodeLabel: episodeToPlay.label,
-        watchedAt: Date.now(),
-      });
-
-      setSelectedPostPlayIndex(0);
-      setScreen("post-play");
-
-    } catch (playError) {
-      const message = playError instanceof Error ? playError.message : "Unknown player error";
-      setError(message);
-      setSelectedEpisodeIndex(resolvedRealIndex);
-      setScreen("episodes");
-    } finally {
-      setLoading(false);
-      setLoadingLabel(null);
-      setError(null);
-    }
+    setSelectedEpisodeIndex(newRealIndex);
+    setPlayingRealIndex(newRealIndex);
+    await fetchAndShowStreams();
   }
 
   if (screen === "search") {
@@ -343,7 +386,7 @@ export function App(): React.ReactElement {
       <Box flexDirection="column" height={height - 2} width="100%">
         <Box flexGrow={1} flexDirection="column" alignItems="center" justifyContent="center">
           <Text color="cyanBright" dimColor>{LOGO}</Text>
-          
+
           <Box width={70} flexDirection="column" marginTop={2}>
             <Box borderStyle="single" borderBottom={false} borderTop={false} borderRight={false} borderLeftColor="blue" paddingLeft={1}>
               <TextInput
@@ -365,7 +408,7 @@ export function App(): React.ReactElement {
             </Text>
           </Box>
         </Box>
-        
+
         <Box width="100%" flexDirection="row" justifyContent="space-between">
           <Text dimColor>~/cwo/joyboy  <Text color="greenBright">◉</Text> ALLANIME /status</Text>
           <Text dimColor>1.0.0</Text>
@@ -398,15 +441,15 @@ export function App(): React.ReactElement {
             );
           })}
         </Box>
-        
+
         {items.length > PAGE_SIZE ? (
           <Box marginBottom={1}>
             <Text dimColor>{`Showing ${pagedResults.start + 1}-${Math.min(pagedResults.start + PAGE_SIZE, items.length)} of ${items.length}`}</Text>
           </Box>
         ) : null}
-        
+
         {error ? <Box><Text color="red">{`Error: ${error}`}</Text></Box> : null}
-        
+
         <Box marginTop={1} borderStyle="single" borderBottom={false} borderLeft={false} borderRight={false} borderTopColor="gray">
           <Text dimColor>↑/↓ <Text color="white">navigate</Text>   ↵ <Text color="white">episodes</Text>   esc <Text color="white">back</Text></Text>
         </Box>
@@ -418,7 +461,7 @@ export function App(): React.ReactElement {
     return (
       <Box flexDirection="column" padding={1} height={height - 1}>
         <Text color="cyanBright" bold>{selectedTitle?.title ?? "Unknown title"}</Text>
-        
+
         <Box marginTop={1} flexDirection="row" flexGrow={1}>
           <Box width="50%" flexDirection="column" marginRight={2}>
             {coverImage ? (
@@ -428,7 +471,7 @@ export function App(): React.ReactElement {
                 <Text dimColor>No Image</Text>
               </Box>
             )}
-            
+
             {(lastWatched || metadata) && (
               <Box flexDirection="column" marginTop={1}>
                 {lastWatched && (
@@ -506,10 +549,50 @@ export function App(): React.ReactElement {
         </Box>
 
         {error ? <Box><Text color="red">{`Error: ${error}`}</Text></Box> : null}
-        
+
         <Box marginTop={1} borderStyle="single" borderBottom={false} borderLeft={false} borderRight={false} borderTopColor="gray">
           <Text dimColor>
             ↑/↓ <Text color="white">navigate</Text>   ↵ <Text color="white">play</Text>   / <Text color="white">filter</Text>   esc <Text color="white">{episodeSearchActive ? "clear filter" : "back"}</Text>
+          </Text>
+        </Box>
+      </Box>
+    );
+  }
+
+  if (screen === "stream-picker") {
+    const streamList = streams.slice(0, height - 8);
+    return (
+      <Box flexDirection="column" padding={1} height={height - 1}>
+        <Text color="cyanBright" bold>{selectedTitle?.title}</Text>
+        <Text dimColor>{selectedEpisode?.label}</Text>
+        <Box marginTop={1} borderStyle="single" borderBottom={false} borderLeft={false} borderRight={false} borderTopColor="gray">
+          <Text dimColor>  Provider         Quality   URL</Text>
+        </Box>
+
+        <Box flexDirection="column" flexGrow={1}>
+          {streamList.map((stream: StreamOption, index: number) => {
+            const selected = index === selectedStreamIndex;
+            const urlDisplay = stream.url.length > 55
+              ? `${stream.url.slice(0, 52)}...`
+              : stream.url;
+            return (
+              <Box key={`${stream.sourceName}-${stream.qualityLabel}-${index}`} paddingLeft={1}>
+                <Text color={selected ? "blueBright" : undefined} bold={selected}>
+                  {selected ? "▶ " : "  "}
+                  <Text color="greenBright">{(stream.sourceName ?? "").padEnd(16)}</Text>
+                  {stream.qualityLabel.padEnd(9)}
+                  <Text dimColor>{urlDisplay}</Text>
+                </Text>
+              </Box>
+            );
+          })}
+        </Box>
+
+        {error ? <Box><Text color="red">{`Error: ${error}`}</Text></Box> : null}
+
+        <Box marginTop={1} borderStyle="single" borderBottom={false} borderLeft={false} borderRight={false} borderTopColor="gray">
+          <Text dimColor>
+            ↑/↓ <Text color="white">navigate</Text>   ↵ <Text color="white">play</Text>   esc <Text color="white">back</Text>
           </Text>
         </Box>
       </Box>

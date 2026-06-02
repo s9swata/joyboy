@@ -85,5 +85,5 @@ async function execYtdlp(args: string[]): Promise<string> {
 }
 
 function isStreamUrl(url: string): boolean {
-  return /(m3u8|mp4|webm|mpd)/i.test(url);
+  return /(m3u8|mp4|webm|mpd|manifest|playlist)/i.test(url);
 }
