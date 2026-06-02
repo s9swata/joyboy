@@ -11,9 +11,9 @@ import { fetchEpisodes, fetchStreamOptions, isDirectVideoUrl, getProviderReferer
 import { fetchAniListMetadata, fetchAniListMetadataByTitle, AnimeMetadata } from "../services/anilistService.js";
 import { searchTitles } from "../services/searchService.js";
 import { fallbackCoverUrl } from "../services/assets.js";
-import { getLastWatched, setLastWatched, WatchHistoryEntry } from "../services/watchHistory.js";
+import { getAnimeWatchData, markEpisodeWatched, getContinueWatching, AnimeWatchData } from "../services/watchHistory.js";
 
-type Screen = "search" | "results" | "episodes" | "stream-picker" | "playing" | "post-play";
+type Screen = "search" | "continue-watching" | "results" | "episodes" | "stream-picker" | "playing" | "post-play";
 const PAGE_SIZE = 12;
 
 const client = new AllanimeClient();
@@ -51,7 +51,10 @@ export function App(): React.ReactElement {
   const [status, setStatus] = useState<string | null>(null);
   const [coverImage, setCoverImage] = useState<string | null>(null);
   const [metadata, setMetadata] = useState<AnimeMetadata | null>(null);
-  const [lastWatched, setLastWatchedEntry] = useState<WatchHistoryEntry | null>(null);
+  const [continueList, setContinueList] = useState<AnimeWatchData[]>([]);
+  const [selectedContinueIndex, setSelectedContinueIndex] = useState(0);
+  const [totalEpisodes, setTotalEpisodes] = useState(0);
+  const [watchedData, setWatchedData] = useState<AnimeWatchData | null>(null);
 
   const selectedTitle = useMemo(() => items[selectedSearchIndex], [items, selectedSearchIndex]);
 
@@ -90,6 +93,29 @@ export function App(): React.ReactElement {
     if (screen === "search") {
       if (key.escape) {
         process.exit(0);
+      }
+      if (key.return && !query.trim()) {
+        void showContinueWatching();
+        return;
+      }
+      return;
+    }
+
+    if (screen === "continue-watching") {
+      if (key.upArrow) {
+        setSelectedContinueIndex((prev: number) => Math.max(prev - 1, 0));
+        return;
+      }
+      if (key.downArrow) {
+        setSelectedContinueIndex((prev: number) => Math.min(prev + 1, Math.max(continueList.length - 1, 0)));
+        return;
+      }
+      if (key.return && continueList[selectedContinueIndex]) {
+        void loadEpisodesFromContinue(continueList[selectedContinueIndex]);
+        return;
+      }
+      if (key.escape) {
+        setScreen("search");
       }
       return;
     }
@@ -276,15 +302,16 @@ export function App(): React.ReactElement {
       ]);
 
       setEpisodes(nextEpisodes);
+      setTotalEpisodes(nextEpisodes.length);
       setSelectedEpisodeIndex(0);
       setEpisodeSearch("");
       setEpisodeSearchActive(false);
       setStreams([]);
 
-      const watched = await getLastWatched(selectedTitle.id);
-      setLastWatchedEntry(watched ?? null);
+      const watched = await getAnimeWatchData(selectedTitle.id);
+      setWatchedData(watched ?? null);
       if (watched) {
-        const idx = nextEpisodes.findIndex(ep => ep.id === watched.episodeId);
+        const idx = nextEpisodes.findIndex(ep => ep.id === watched.lastEpisodeId);
         if (idx !== -1) {
           setSelectedEpisodeIndex(idx);
         }
@@ -349,14 +376,7 @@ export function App(): React.ReactElement {
       const playerTitle = `${selectedTitle.title} - ${selectedEpisode.label}`;
       await launchPlayer(playUrl, { executable: "iina", referer, title: playerTitle });
 
-      await setLastWatched(selectedTitle.id, selectedTitle.title, selectedEpisode.id, selectedEpisode.label);
-      setLastWatchedEntry({
-        animeId: selectedTitle.id,
-        title: selectedTitle.title,
-        episodeId: selectedEpisode.id,
-        episodeLabel: selectedEpisode.label,
-        watchedAt: Date.now(),
-      });
+      await markEpisodeWatched(selectedTitle.id, selectedTitle.title, selectedEpisode.id, selectedEpisode.label, totalEpisodes, selectedTitle.anilistId);
 
       setSelectedPostPlayIndex(0);
       setScreen("post-play");
@@ -381,6 +401,68 @@ export function App(): React.ReactElement {
     await fetchAndShowStreams();
   }
 
+  async function showContinueWatching(): Promise<void> {
+    const list = await getContinueWatching();
+    setContinueList(list);
+    setSelectedContinueIndex(0);
+    setScreen("continue-watching");
+  }
+
+  async function loadEpisodesFromContinue(data: AnimeWatchData): Promise<void> {
+    setSelectedSearchIndex(0);
+    const item: SearchItem = { id: data.animeId, title: data.title };
+    setItems([item]);
+    setSelectedSearchIndex(0);
+    setEpisodes([]);
+    setStreams([]);
+
+    setLoading(true);
+    setLoadingLabel("Loading episodes...");
+    setError(null);
+    setCoverImage(null);
+
+    try {
+      const [nextEpisodes] = await Promise.all([
+        fetchEpisodes(client, data.animeId),
+        (async () => {
+          try {
+            const meta = data.anilistId
+              ? await fetchAniListMetadata(data.anilistId)
+              : await fetchAniListMetadataByTitle(data.title);
+
+            if (meta) {
+              setMetadata(meta);
+            }
+
+            const coverUrl = meta?.coverUrl ?? fallbackCoverUrl(undefined, 250);
+            if (coverUrl) {
+              setCoverImage(coverUrl);
+            }
+          } catch {
+            // cover is optional
+          }
+        })()
+      ]);
+
+      setTotalEpisodes(nextEpisodes.length);
+      setEpisodes(nextEpisodes);
+
+      const idx = nextEpisodes.findIndex(ep => ep.id === data.lastEpisodeId);
+      setSelectedEpisodeIndex(idx !== -1 ? idx : 0);
+      setEpisodeSearch("");
+      setEpisodeSearchActive(false);
+      setStreams([]);
+      setWatchedData(data);
+      setScreen("episodes");
+    } catch (episodeError) {
+      const message = episodeError instanceof Error ? episodeError.message : "Unknown error";
+      setError(message);
+    } finally {
+      setLoading(false);
+      setLoadingLabel(null);
+    }
+  }
+
   if (screen === "search") {
     return (
       <Box flexDirection="column" height={height - 2} width="100%">
@@ -398,13 +480,14 @@ export function App(): React.ReactElement {
             </Box>
             <Box marginTop={1} flexDirection="row">
               <Text color="blueBright">Search  </Text>
-              <Text dimColor>allanime:hianime sources</Text>
+              <Text dimColor>allanime · </Text>
+              <Text dimColor>⏎ empty for continue watching</Text>
             </Box>
           </Box>
 
           <Box marginTop={4}>
             <Text dimColor>
-              tab <Text color="gray">agents</Text>   ctrl+p <Text color="gray">commands</Text>   esc <Text color="gray">exit</Text>
+              ⏎ <Text color="gray">search</Text>   esc <Text color="gray">exit</Text>
             </Text>
           </Box>
         </Box>
@@ -418,6 +501,38 @@ export function App(): React.ReactElement {
           <Box marginTop={1}><Text color="blue">{loadingLabel}</Text></Box>
         ) : null}
         {error ? <Box marginTop={1}><Text color="red">{`Error: ${error}`}</Text></Box> : null}
+      </Box>
+    );
+  }
+
+  if (screen === "continue-watching") {
+    const list = continueList.slice(0, height - 8);
+    return (
+      <Box flexDirection="column" padding={1} height={height - 1}>
+        <Text color="cyanBright" bold>Continue Watching</Text>
+        <Box marginTop={1} flexDirection="column" flexGrow={1}>
+          {list.length === 0 ? <Text dimColor>No watch history yet. Search for an anime to start!</Text> : null}
+          {list.map((entry: AnimeWatchData, index: number) => {
+            const selected = index === selectedContinueIndex;
+            const progress = `${entry.watchedEpisodes.length}/${entry.totalEpisodes || "?"}`;
+            const ago = formatTimeAgo(entry.lastWatchedAt);
+            return (
+              <Box key={entry.animeId} paddingLeft={1}>
+                <Text color={selected ? "blueBright" : undefined} bold={selected}>
+                  {selected ? "▶ " : "  "}
+                  {entry.title.length > 45 ? `${entry.title.slice(0, 45)}...` : entry.title}
+                  <Text dimColor> — {progress} eps, {ago}</Text>
+                </Text>
+              </Box>
+            );
+          })}
+        </Box>
+        {error ? <Box><Text color="red">{`Error: ${error}`}</Text></Box> : null}
+        <Box marginTop={1} borderStyle="single" borderBottom={false} borderLeft={false} borderRight={false} borderTopColor="gray">
+          <Text dimColor>
+            ↑/↓ <Text color="white">navigate</Text>   ↵ <Text color="white">resume</Text>   esc <Text color="white">back</Text>
+          </Text>
+        </Box>
       </Box>
     );
   }
@@ -472,12 +587,22 @@ export function App(): React.ReactElement {
               </Box>
             )}
 
-            {(lastWatched || metadata) && (
+            {(watchedData || metadata) && (
               <Box flexDirection="column" marginTop={1}>
-                {lastWatched && (
-                  <Box flexDirection="row">
-                    <Text dimColor>Resume: </Text>
-                    <Text color="greenBright">{lastWatched.episodeLabel}</Text>
+                {watchedData && (
+                  <Box flexDirection="column">
+                    <Box flexDirection="row">
+                      <Text dimColor>Resume: </Text>
+                      <Text color="greenBright">{watchedData.lastEpisodeLabel}</Text>
+                    </Box>
+                    <Box flexDirection="row">
+                      <Text dimColor>Progress: </Text>
+                      <Text color="blueBright">{watchedData.watchedEpisodes.length}/{totalEpisodes || watchedData.totalEpisodes} eps</Text>
+                    </Box>
+                    <Box flexDirection="row">
+                      <Text dimColor>Last: </Text>
+                      <Text dimColor>{formatTimeAgo(watchedData.lastWatchedAt)}</Text>
+                    </Box>
                   </Box>
                 )}
                 {metadata && (
@@ -652,4 +777,18 @@ function getPageSlice<T>(items: T[], selectedIndex: number, pageSize: number): {
   const start = page * pageSize;
   const end = Math.min(start + pageSize, items.length);
   return { start, items: items.slice(start, end) };
+}
+
+function formatTimeAgo(timestamp: number): string {
+  const seconds = Math.floor((Date.now() - timestamp) / 1000);
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}mo ago`;
+  return `${Math.floor(months / 12)}y ago`;
 }

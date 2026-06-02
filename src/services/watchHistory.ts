@@ -1,90 +1,132 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
-export interface WatchHistoryEntry {
-  animeId: string;
-  title: string;
+export interface WatchedEpisode {
   episodeId: string;
   episodeLabel: string;
   watchedAt: number;
 }
 
-export interface WatchHistory {
-  entries: Record<string, WatchHistoryEntry>;
+export interface AnimeWatchData {
+  animeId: string;
+  title: string;
+  anilistId?: number;
+  totalEpisodes: number;
+  lastEpisodeId: string;
+  lastEpisodeLabel: string;
+  lastWatchedAt: number;
+  watchedEpisodes: WatchedEpisode[];
 }
+
+export type WatchHistory = Record<string, AnimeWatchData>;
 
 const HISTORY_FILE = "watch-history.json";
 
-async function getHistoryPath(): Promise<string> {
-  const configDir = join(process.env.XDG_CONFIG_HOME ?? join(process.env.HOME ?? "", ".config"), "joyboy");
-  return join(configDir, HISTORY_FILE);
+function getConfigDir(): string {
+  return join(
+    process.env.XDG_CONFIG_HOME ?? join(process.env.HOME ?? "", ".config"),
+    "joyboy",
+  );
 }
 
-async function ensureConfigDir(): Promise<string> {
-  const configDir = join(process.env.XDG_CONFIG_HOME ?? join(process.env.HOME ?? "", ".config"), "joyboy");
-  if (!existsSync(configDir)) {
-    await mkdir(configDir, { recursive: true });
+function getHistoryPath(): string {
+  return join(getConfigDir(), HISTORY_FILE);
+}
+
+async function ensureConfigDir(): Promise<void> {
+  const dir = getConfigDir();
+  if (!existsSync(dir)) {
+    await mkdir(dir, { recursive: true });
   }
-  return configDir;
 }
 
 export async function loadWatchHistory(): Promise<WatchHistory> {
   try {
-    const filePath = await getHistoryPath();
+    const filePath = getHistoryPath();
     if (!existsSync(filePath)) {
-      return { entries: {} };
+      return {};
     }
     const content = await readFile(filePath, "utf-8");
     const parsed = JSON.parse(content);
-    if (!parsed.entries || typeof parsed.entries !== "object") {
-      return { entries: {} };
+    if (typeof parsed !== "object" || parsed === null) {
+      return {};
     }
     return parsed as WatchHistory;
   } catch {
-    return { entries: {} };
+    return {};
   }
 }
 
 export async function saveWatchHistory(history: WatchHistory): Promise<void> {
   await ensureConfigDir();
-  const filePath = await getHistoryPath();
-  await writeFile(filePath, JSON.stringify(history, null, 2), "utf-8");
+  await writeFile(getHistoryPath(), JSON.stringify(history, null, 2), "utf-8");
 }
 
-export async function setLastWatched(
+export async function markEpisodeWatched(
   animeId: string,
   title: string,
   episodeId: string,
   episodeLabel: string,
+  totalEpisodes: number,
+  anilistId?: number,
 ): Promise<void> {
   const history = await loadWatchHistory();
-  history.entries[animeId] = {
-    animeId,
-    title,
-    episodeId,
-    episodeLabel,
-    watchedAt: Date.now(),
-  };
+  const existing = history[animeId];
+
+  const now = Date.now();
+  const newEpisode: WatchedEpisode = { episodeId, episodeLabel, watchedAt: now };
+
+  if (!existing) {
+    history[animeId] = {
+      animeId,
+      title,
+      anilistId,
+      totalEpisodes,
+      lastEpisodeId: episodeId,
+      lastEpisodeLabel: episodeLabel,
+      lastWatchedAt: now,
+      watchedEpisodes: [newEpisode],
+    };
+  } else {
+    const alreadyWatched = existing.watchedEpisodes.some(e => e.episodeId === episodeId);
+    if (!alreadyWatched) {
+      existing.watchedEpisodes.push(newEpisode);
+    } else {
+      const found = existing.watchedEpisodes.find(e => e.episodeId === episodeId);
+      if (found) {
+        found.watchedAt = now;
+      }
+    }
+    existing.lastEpisodeId = episodeId;
+    existing.lastEpisodeLabel = episodeLabel;
+    existing.lastWatchedAt = now;
+    existing.title = title;
+    existing.totalEpisodes = totalEpisodes;
+    if (anilistId !== undefined) {
+      existing.anilistId = anilistId;
+    }
+  }
+
   await saveWatchHistory(history);
 }
 
-export async function getLastWatched(animeId: string): Promise<WatchHistoryEntry | undefined> {
+export async function getAnimeWatchData(animeId: string): Promise<AnimeWatchData | undefined> {
   const history = await loadWatchHistory();
-  return history.entries[animeId];
+  return history[animeId];
 }
 
-export async function getAllWatchHistory(): Promise<WatchHistoryEntry[]> {
+export async function getContinueWatching(): Promise<AnimeWatchData[]> {
   const history = await loadWatchHistory();
-  return Object.values(history.entries).sort((a, b) => b.watchedAt - a.watchedAt);
+  return Object.values(history).sort((a, b) => b.lastWatchedAt - a.lastWatchedAt);
 }
 
-export async function removeWatchHistory(animeId: string): Promise<void> {
+export async function removeAnimeHistory(animeId: string): Promise<void> {
   const history = await loadWatchHistory();
-  delete history.entries[animeId];
+  delete history[animeId];
   await saveWatchHistory(history);
 }
 
 export async function clearAllWatchHistory(): Promise<void> {
-  await saveWatchHistory({ entries: {} });
+  await saveWatchHistory({});
 }
