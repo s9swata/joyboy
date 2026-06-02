@@ -512,9 +512,11 @@ export function App(): React.ReactElement {
         <Text color="cyanBright" bold>Continue Watching</Text>
         <Box marginTop={1} flexDirection="column" flexGrow={1}>
           {list.length === 0 ? <Text dimColor>No watch history yet. Search for an anime to start!</Text> : null}
-          {list.map((entry: AnimeWatchData, index: number) => {
+          {list.map((entry: AnimeWatchData | undefined, index: number) => {
             const selected = index === selectedContinueIndex;
-            const progress = `${entry.watchedEpisodes.length}/${entry.totalEpisodes || "?"}`;
+            if (!entry) return null;
+            const watched = entry.watchedEpisodes ?? [];
+            const progress = `${watched.length}/${entry.totalEpisodes || "?"}`;
             const ago = formatTimeAgo(entry.lastWatchedAt);
             return (
               <Box key={entry.animeId} paddingLeft={1}>

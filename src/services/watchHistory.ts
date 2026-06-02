@@ -52,6 +52,30 @@ export async function loadWatchHistory(): Promise<WatchHistory> {
     if (typeof parsed !== "object" || parsed === null) {
       return {};
     }
+
+    // Migrate from old format: { entries: { animeId: { episodeId, ... } } }
+    if ("entries" in parsed && parsed.entries && typeof parsed.entries === "object" && !Array.isArray(parsed.entries)) {
+      const oldEntries = parsed.entries as Record<string, Record<string, unknown>>;
+      const migrated: WatchHistory = {};
+      for (const [animeId, oldEntry] of Object.entries(oldEntries)) {
+        const epId = String(oldEntry.episodeId ?? "");
+        const epLabel = String(oldEntry.episodeLabel ?? `Episode ${epId}`);
+        migrated[animeId] = {
+          animeId,
+          title: String(oldEntry.title ?? "Unknown"),
+          anilistId: typeof oldEntry.anilistId === "number" ? oldEntry.anilistId : undefined,
+          totalEpisodes: typeof oldEntry.totalEpisodes === "number" ? oldEntry.totalEpisodes : 0,
+          lastEpisodeId: epId,
+          lastEpisodeLabel: epLabel,
+          lastWatchedAt: typeof oldEntry.watchedAt === "number" ? oldEntry.watchedAt : Date.now(),
+          watchedEpisodes: [{ episodeId: epId, episodeLabel: epLabel, watchedAt: typeof oldEntry.watchedAt === "number" ? oldEntry.watchedAt : Date.now() }],
+        };
+      }
+      // Overwrite old format with migrated data
+      await writeFile(filePath, JSON.stringify(migrated, null, 2), "utf-8");
+      return migrated;
+    }
+
     return parsed as WatchHistory;
   } catch {
     return {};
