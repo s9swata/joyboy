@@ -1,2 +1,6 @@
 node_modules/
-.DS_Store
+dist/
+graphify-out/
+raw/
+tui.png
+test-ink-image.tsx
