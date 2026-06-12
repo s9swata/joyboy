@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO="s9swata/joyboy"
-VERSION="v1.0.0"
+VERSION="v1.0.1"
 TARBALL_URL="https://github.com/${REPO}/archive/${VERSION}.tar.gz"
 SHARED="${HOME}/.local/share/joyboy"
 BINDIR="${HOME}/.local/bin"
@@ -33,7 +33,7 @@ install_joyboy() {
   echo "Downloading joyboy ${VERSION}..."
   curl -fsSL "${TARBALL_URL}" -o "${tmpdir}/joyboy.tar.gz"
 
-  local dirname="joyboy-1.0.0"
+  local dirname="joyboy-1.0.1"
   tar xzf "${tmpdir}/joyboy.tar.gz" -C "${tmpdir}"
 
   rm -rf "${SHARED}"
