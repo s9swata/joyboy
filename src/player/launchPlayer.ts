@@ -24,7 +24,7 @@ export async function launchPlayer(url: string, options: LaunchPlayerOptions = {
     if (executable === "mpv") {
       finalArgs.push(`--title=${options.title}`);
     } else if (executable === "iina") {
-      finalArgs.push(`--mpv-title=${options.title}`);
+      finalArgs.push(`--mpv-force-media-title=${options.title}`);
     }
   }
 

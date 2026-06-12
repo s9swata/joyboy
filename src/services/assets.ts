@@ -1,4 +1,4 @@
-import { ASSET_CDN_BASE, MANGA_CDN_BASE } from "../api/constants.js";
+import { ASSET_CDN_BASE, MANGA_CDN_BASE } from "@/api/constants.js";
 
 const COVER_REGEX = /(\d+)\.(jpg|png|webp)$/i;
 

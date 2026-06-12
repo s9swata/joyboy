@@ -1,5 +1,5 @@
-import { AllanimeClient } from "../api/allanimeClient.js";
-import type { EpisodeItem, StreamOption } from "../api/types.js";
+import { AllanimeClient } from "@/api/allanimeClient.js";
+import type { EpisodeItem, StreamOption } from "@/api/types.js";
 import { searchAndGetStreams } from "./hianimeScraper.js";
 
 const URL_REGEX = /^https?:\/\//i;

@@ -32,15 +32,15 @@ joyboy/
 - **Ink** - React for CLI/TUI
 - **React 19** - UI framework
 - **TypeScript** - Type safety
-- **tsx** - TypeScript executor for dev
+- **tsx** - TypeScript executor (runtime + dev)
 
 ## Commands
 
 ```bash
-npm run dev    # Run in development mode
-npm run build  # Compile TypeScript
-npm run start  # Run compiled JavaScript
-npm run check  # TypeScript type checking
+npm run dev    # Run in development mode (tsx src/index.tsx)
+npm run build  # TypeScript type check + emit to dist/ (not directly runnable)
+npm run start  # Run via tsx (tsx src/index.tsx)
+npm run check  # TypeScript type checking (tsc --noEmit)
 ```
 
 ## Environment Variables
@@ -64,6 +64,12 @@ npm run check  # TypeScript type checking
 - Search input → Results list → Detail view
 - Arrow key navigation
 - ESC to go back
+
+## Import Conventions
+
+- Use `@/` path alias for cross-directory imports (maps to `src/`)
+- Use relative imports (`./...`) only for same-directory imports
+- Always include `.js` extension in import paths (TypeScript convention)
 
 ## TypeScript Conventions
 

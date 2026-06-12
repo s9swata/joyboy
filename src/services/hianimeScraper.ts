@@ -1,6 +1,6 @@
 import { HiAnime } from "aniwatch";
-import { extractStreamUrl } from "../player/ytdlp.js";
-import type { EpisodeItem, StreamOption } from "../api/types.js";
+import { extractStreamUrl } from "@/player/ytdlp.js";
+import type { EpisodeItem, StreamOption } from "@/api/types.js";
 
 const scraper = new HiAnime.Scraper();
 

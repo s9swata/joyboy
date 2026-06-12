@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import type { StreamOption } from "../api/types.js";
+import type { StreamOption } from "@/api/types.js";
 
 export interface YtdlpOptions {
   referer?: string;

@@ -1,5 +1,5 @@
-import { AllanimeClient } from "../api/allanimeClient.js";
-import type { SearchItem, TranslationType } from "../api/types.js";
+import { AllanimeClient } from "@/api/allanimeClient.js";
+import type { SearchItem, TranslationType } from "@/api/types.js";
 import { normalizeCoverUrl } from "./assets.js";
 
 export interface SearchOptions {
