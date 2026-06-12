@@ -40,7 +40,10 @@ install_joyboy() {
   cp -R "${tmpdir}/${dirname}" "${SHARED}"
 
   cd "${SHARED}"
-  sed -i '/"joyboy":[[:space:]]*"link:/d' package.json
+  node -e '
+    const p = require("fs").readFileSync("package.json","utf8");
+    require("fs").writeFileSync("package.json", p.replace(/"joyboy":\s*"link:.*",?\n?/, ""));
+  '
   npm install
 
   cat > "${BINDIR}/joyboy" << WRAPPER
