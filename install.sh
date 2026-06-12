@@ -48,7 +48,7 @@ install_joyboy() {
 
   cat > "${BINDIR}/joyboy" << WRAPPER
 #!/bin/bash
-exec "\$(dirname "\$0")/../share/joyboy/node_modules/.bin/tsx" "\$(dirname "\$0")/../share/joyboy/src/index.tsx" "\$@"
+exec "\$(dirname "\$0")/../share/joyboy/node_modules/.bin/tsx" --tsconfig "\$(dirname "\$0")/../share/joyboy/tsconfig.json" "\$(dirname "\$0")/../share/joyboy/src/index.tsx" "\$@"
 WRAPPER
   chmod +x "${BINDIR}/joyboy"
 }
