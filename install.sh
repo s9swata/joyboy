@@ -124,9 +124,12 @@ detect_players() {
   if [ "$found" -eq 0 ]; then
     echo ""
     echo "  No player found! Install one:"
-    echo "    macOS: brew install mpv"
-    echo "    Linux: sudo apt install mpv  (or pacman/dnf equivalent)"
-    echo "    Any:   https://mpv.io/"
+    echo "    VLC:  https://www.videolan.org/vlc/"
+    echo "    mpv:  https://mpv.io/"
+    if [ "$(uname -s)" = "Darwin" ]; then
+      echo "    IINA: https://iina.io/"
+    fi
+    echo "    Linux: sudo apt install vlc  (or pacman/dnf equivalent)"
   fi
 }
 
