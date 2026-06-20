@@ -1,14 +1,15 @@
 import { spawn } from "node:child_process";
+import type { PlayerId } from "./playerService.js";
 
 export interface LaunchPlayerOptions {
-  executable?: string;
+  executable?: PlayerId | string;
   args?: string[];
   referer?: string;
   title?: string;
 }
 
 export async function launchPlayer(url: string, options: LaunchPlayerOptions = {}): Promise<void> {
-  const executable = options.executable ?? process.env.ANIME_PLAYER ?? "iina";
+  const executable = options.executable ?? process.env.ANIME_PLAYER ?? "mpv";
   const args = options.args ?? process.env.ANIME_PLAYER_ARGS?.split(" ").filter(Boolean) ?? [];
   const finalArgs = [...args];
 
@@ -17,6 +18,8 @@ export async function launchPlayer(url: string, options: LaunchPlayerOptions = {
       finalArgs.push(`--http-header-fields=Referer: ${options.referer}`);
     } else if (executable === "iina") {
       finalArgs.push(`--mpv-http-header-fields=Referer: ${options.referer}`);
+    } else if (executable === "vlc") {
+      finalArgs.push("--http-referrer", options.referer);
     }
   }
 

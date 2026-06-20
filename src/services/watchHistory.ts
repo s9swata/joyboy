@@ -1,6 +1,7 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { homedir } from "node:os";
 
 export interface WatchedEpisode {
   episodeId: string;
@@ -25,7 +26,7 @@ const HISTORY_FILE = "watch-history.json";
 
 function getConfigDir(): string {
   return join(
-    process.env.XDG_CONFIG_HOME ?? join(process.env.HOME ?? "", ".config"),
+    process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"),
     "joyboy",
   );
 }

@@ -39,7 +39,7 @@ export function SearchScreen({ query, setQuery, runSearch, showContinueWatching,
 
         <Box marginTop={4}>
           <Text dimColor>
-            ⏎ <Text color="gray">search</Text>   esc <Text color="gray">exit</Text>
+            ⏎ <Text color="gray">search</Text>   esc <Text color="gray">exit</Text>   s <Text color="gray">settings</Text>
           </Text>
         </Box>
       </Box>

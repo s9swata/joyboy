@@ -1,4 +1,4 @@
-export type Screen = "search" | "continue-watching" | "results" | "episodes" | "stream-picker" | "playing" | "post-play";
+export type Screen = "search" | "continue-watching" | "results" | "episodes" | "stream-picker" | "playing" | "post-play" | "settings";
 
 export const PAGE_SIZE = 12;
 

@@ -8,6 +8,7 @@ import { EpisodesScreen } from "./screens/EpisodesScreen.js";
 import { StreamPickerScreen } from "./screens/StreamPickerScreen.js";
 import { PlayingScreen } from "./screens/PlayingScreen.js";
 import { PostPlayScreen } from "./screens/PostPlayScreen.js";
+import { SettingsScreen } from "./screens/SettingsScreen.js";
 
 function displayedIndex(state: ReturnType<typeof useAppState>): number {
   const ep = state.episodes[state.playingRealIndex];
@@ -25,6 +26,10 @@ export function App(): React.ReactElement {
     switch (state.screen) {
       case "search":
         if (key.escape) process.exit(0);
+        if (input === "s") state.setScreen("settings");
+        break;
+
+      case "settings":
         break;
 
       case "continue-watching":
@@ -108,6 +113,8 @@ export function App(): React.ReactElement {
       return <PlayingScreen selectedTitle={state.selectedTitle} selectedEpisode={state.selectedEpisode} loadingLabel={state.loadingLabel} />;
     case "post-play":
       return <PostPlayScreen postPlayOptions={state.postPlayOptions} selectedPostPlayIndex={state.selectedPostPlayIndex} />;
+    case "settings":
+      return <SettingsScreen selectedPlayer={state.selectedPlayer} onSelectPlayer={state.setSelectedPlayer} onClose={() => state.setScreen("search")} />;
     default:
       return <Box><Text>Unknown state</Text></Box>;
   }

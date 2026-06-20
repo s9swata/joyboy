@@ -44,12 +44,14 @@ install_joyboy() {
     const p = require("fs").readFileSync("package.json","utf8");
     require("fs").writeFileSync("package.json", p.replace(/"joyboy":\s*"link:.*",?\n?/, ""));
   '
-  npm install
+  if ! npm install; then
+    echo ""
+    echo "npm install failed. Make sure Node.js and npm are installed:"
+    echo "  https://nodejs.org/"
+    exit 1
+  fi
 
-  cat > "${BINDIR}/joyboy" << WRAPPER
-#!/bin/bash
-exec "\$(dirname "\$0")/../share/joyboy/node_modules/.bin/tsx" --tsconfig "\$(dirname "\$0")/../share/joyboy/tsconfig.json" "\$(dirname "\$0")/../share/joyboy/src/index.tsx" "\$@"
-WRAPPER
+  ln -sf "${SHARED}/bin/joyboy.js" "${BINDIR}/joyboy"
   chmod +x "${BINDIR}/joyboy"
 }
 
@@ -95,17 +97,11 @@ print_done() {
     echo "  source ~/.bashrc"
     echo ""
   fi
-  if [ "$(uname -s)" = "Darwin" ]; then
-    echo "IINA is the default player. To use a different player:"
-  else
-    echo "A video player is required. Install one via:"
-    echo "  Debian/Ubuntu: sudo apt install mpv"
-    echo "  Arch:          sudo pacman -S mpv"
-    echo "  Fedora:        sudo dnf install mpv"
-    echo ""
-    echo "Then set it with:"
-  fi
-  echo "  export ANIME_PLAYER=mpv"
+  echo "A video player is required (mpv, VLC, or IINA on macOS)."
+  echo "The first available player will be auto-detected at launch."
+  echo ""
+  echo "To override, set ANIME_PLAYER:  export ANIME_PLAYER=mpv"
+  echo "Or press 's' in the app to open player settings."
 }
 
 main

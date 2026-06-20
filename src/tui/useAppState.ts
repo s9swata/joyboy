@@ -2,6 +2,7 @@ import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { useStdout } from "ink";
 import type { EpisodeItem, SearchItem, StreamOption } from "@/api/types.js";
 import type { AnimeWatchData } from "@/services/watchHistory.js";
+import type { PlayerId } from "@/player/playerService.js";
 import type { Screen } from "./constants.js";
 import { PAGE_SIZE } from "./constants.js";
 import { getPageSlice } from "./utils.js";
@@ -50,6 +51,8 @@ export interface AppState {
   pagedResults: { start: number; items: SearchItem[] };
   pagedEpisodes: { start: number; items: EpisodeItem[] };
   postPlayOptions: string[];
+  selectedPlayer: PlayerId;
+  setSelectedPlayer: (p: PlayerId) => void;
   runSearch: (searchValue: string) => Promise<void>;
   loadEpisodes: () => Promise<void>;
   fetchAndShowStreams: () => Promise<void>;
@@ -77,6 +80,9 @@ export function useAppState(): AppState {
   const [items, setItems] = useState<SearchItem[]>([]);
   const [episodes, setEpisodes] = useState<EpisodeItem[]>([]);
   const [streams, setStreams] = useState<StreamOption[]>([]);
+  const [selectedPlayer, setSelectedPlayer] = useState<PlayerId>(
+    (process.env.ANIME_PLAYER as PlayerId) ?? "mpv",
+  );
 
   const [selectedSearchIndex, setSelectedSearchIndex] = useState(0);
   const [selectedEpisodeIndex, setSelectedEpisodeIndex] = useState(0);
@@ -129,6 +135,7 @@ export function useAppState(): AppState {
     continueList, totalEpisodes, watchedData, height,
     selectedTitle, displayedEpisodes, selectedEpisode,
     pagedResults, pagedEpisodes, postPlayOptions,
+    selectedPlayer, setSelectedPlayer,
     runSearch: (v) => actions.runSearch(s, v),
     loadEpisodes: () => actions.loadEpisodes(s),
     fetchAndShowStreams: () => actions.fetchAndShowStreams(s),

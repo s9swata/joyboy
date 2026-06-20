@@ -92,7 +92,7 @@ export async function playSelectedStream(s: S): Promise<void> {
 
     let playerError: Error | null = null;
     try {
-      await launchPlayer(playUrl, { executable: "iina", referer, title: `${currentTitle.title} - ${currentEpisode.label}` });
+      await launchPlayer(playUrl, { executable: s.selectedPlayer, referer, title: `${currentTitle.title} - ${currentEpisode.label}` });
     } catch (err) {
       playerError = err instanceof Error ? err : new Error(String(err));
     }
