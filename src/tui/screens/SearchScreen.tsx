@@ -3,6 +3,7 @@ import { Box, Text } from "ink";
 // @ts-ignore
 import TextInput from "ink-text-input";
 import { LOGO } from "@/tui/constants.js";
+import type { PlayerId } from "@/player/playerService.js";
 
 interface Props {
   query: string;
@@ -13,9 +14,10 @@ interface Props {
   loadingLabel: string | null;
   error: string | null;
   height: number;
+  selectedPlayer: PlayerId;
 }
 
-export function SearchScreen({ query, setQuery, runSearch, showContinueWatching, loading, loadingLabel, error, height }: Props): React.ReactElement {
+export function SearchScreen({ query, setQuery, runSearch, showContinueWatching, loading, loadingLabel, error, height, selectedPlayer }: Props): React.ReactElement {
   return (
     <Box flexDirection="column" height={height - 2} width="100%">
       <Box flexGrow={1} flexDirection="column" alignItems="center" justifyContent="center">
@@ -46,7 +48,7 @@ export function SearchScreen({ query, setQuery, runSearch, showContinueWatching,
 
       <Box width="100%" flexDirection="row" justifyContent="space-between">
         <Text dimColor>~/cwo/joyboy  <Text color="greenBright">◉</Text> ALLANIME /status</Text>
-        <Text dimColor>1.0.0</Text>
+        <Text dimColor>▶ <Text color="yellow">{selectedPlayer}</Text>  ·  <Text color="greenBright">s</Text> settings</Text>
       </Box>
 
       {loading && loadingLabel ? <Box marginTop={1}><Text color="blue">{loadingLabel}</Text></Box> : null}

@@ -22,9 +22,6 @@ export function SettingsScreen({ selectedPlayer, onSelectPlayer, onClose }: Prop
     })();
   }, []);
 
-  const available = players.filter(p => p.available);
-  const list = available.length > 0 ? available : players;
-
   useInput((_input, key) => {
     if (key.escape) {
       onClose();
@@ -37,13 +34,15 @@ export function SettingsScreen({ selectedPlayer, onSelectPlayer, onClose }: Prop
     }
 
     if (key.downArrow) {
-      setCursor(prev => Math.min(prev + 1, list.length - 1));
+      setCursor(prev => Math.min(prev + 1, players.length - 1));
       return;
     }
 
     if (key.return) {
-      onSelectPlayer(list[cursor].id);
-      onClose();
+      if (players[cursor].available) {
+        onSelectPlayer(players[cursor].id);
+        onClose();
+      }
     }
   });
 
@@ -51,22 +50,29 @@ export function SettingsScreen({ selectedPlayer, onSelectPlayer, onClose }: Prop
     <Box flexDirection="column" paddingLeft={2} paddingTop={1}>
       <Text bold underline>Player Settings</Text>
       <Box marginTop={1} flexDirection="column">
-        {list.map((p, i) => {
+        {players.map((p, i) => {
           const isSelected = p.id === selectedPlayer;
           const isCursor = i === cursor;
           const prefix = isCursor ? ">" : " ";
+          const status = p.available ? "✓" : "✗";
           const marker = isSelected ? "◉" : "○";
-          const note = !p.available ? " (not found)" : "";
           return (
             <Box key={p.id}>
               <Text>
-                {prefix} <Text color={isSelected ? "green" : "dim"}>{marker}</Text> {p.name}{" "}
-                <Text dimColor>{note}</Text>
+                {prefix} <Text color={isCursor ? "yellow" : "dim"}>{status}</Text>{" "}
+                <Text color={isSelected ? "green" : undefined}>{marker}</Text>{" "}
+                {p.name}{" "}
+                <Text dimColor>{!p.available ? "(not installed)" : isSelected ? "(active)" : ""}</Text>
               </Text>
             </Box>
           );
         })}
       </Box>
+      {players.filter(p => p.available).length === 0 ? (
+        <Box marginTop={1}>
+          <Text color="red">No player found. Install mpv or VLC to play videos.</Text>
+        </Box>
+      ) : null}
       <Box marginTop={1}>
         <Text dimColor>↑↓ navigate · ⏎ select · esc back</Text>
       </Box>

@@ -86,7 +86,52 @@ install_linux() {
   print_done
 }
 
+detect_players() {
+  echo ""
+  echo "Detecting video players..."
+  local found=0
+
+  if command -v mpv >/dev/null 2>&1; then
+    echo "  ✓ mpv         found"
+    found=1
+  else
+    echo "  ✗ mpv         not found"
+  fi
+
+  if command -v vlc >/dev/null 2>&1; then
+    echo "  ✓ VLC         found"
+    found=1
+  else
+    echo "  ✗ VLC         not found"
+  fi
+
+  if [ "$(uname -s)" = "Darwin" ]; then
+    if [ -d "/Applications/IINA.app" ]; then
+      echo "  ✓ IINA        found"
+      found=1
+    else
+      echo "  ✗ IINA        not found"
+    fi
+  else
+    if command -v iina >/dev/null 2>&1; then
+      echo "  ✓ IINA        found"
+      found=1
+    else
+      echo "  ✗ IINA        not found"
+    fi
+  fi
+
+  if [ "$found" -eq 0 ]; then
+    echo ""
+    echo "  No player found! Install one:"
+    echo "    macOS: brew install mpv"
+    echo "    Linux: sudo apt install mpv  (or pacman/dnf equivalent)"
+    echo "    Any:   https://mpv.io/"
+  fi
+}
+
 print_done() {
+  detect_players
   echo ""
   echo "joyboy installed to ${SHARED}"
   echo "The joyboy command is at ${BINDIR}/joyboy"
@@ -97,11 +142,8 @@ print_done() {
     echo "  source ~/.bashrc"
     echo ""
   fi
-  echo "A video player is required (mpv, VLC, or IINA on macOS)."
-  echo "The first available player will be auto-detected at launch."
-  echo ""
-  echo "To override, set ANIME_PLAYER:  export ANIME_PLAYER=mpv"
-  echo "Or press 's' in the app to open player settings."
+  echo "Set ANIME_PLAYER env var to override:  export ANIME_PLAYER=mpv"
+  echo "Or press 's' in the app to switch players at any time."
 }
 
 main

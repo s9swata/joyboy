@@ -100,7 +100,7 @@ export function App(): React.ReactElement {
 
   switch (state.screen) {
     case "search":
-      return <SearchScreen query={state.query} setQuery={state.setQuery} runSearch={state.runSearch} showContinueWatching={state.showContinueWatching} loading={state.loading} loadingLabel={state.loadingLabel} error={state.error} height={state.height} />;
+      return <SearchScreen query={state.query} setQuery={state.setQuery} runSearch={state.runSearch} showContinueWatching={state.showContinueWatching} loading={state.loading} loadingLabel={state.loadingLabel} error={state.error} height={state.height} selectedPlayer={state.selectedPlayer} />;
     case "continue-watching":
       return <ContinueWatchingScreen continueList={state.continueList} selectedContinueIndex={state.selectedContinueIndex} error={state.error} height={state.height} />;
     case "results":
